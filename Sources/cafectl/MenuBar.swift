@@ -20,15 +20,19 @@ final class MenuBar: NSObject {
         let active = Mode.allCases.filter { snapshot.modes[$0.rawValue]?.active == true }
         let image = Self.statusImage(activeModes: active)
         if let image, let color = Self.backgroundColor(activeModes: active) {
-            statusItem.length = image.size.width + 10
+            statusItem.length = image.size.width + 14
             button.image = nil
+            button.clipsToBounds = false
             let pill = pillView ?? StatusPillView(frame: button.bounds)
             if pillView == nil {
                 pill.autoresizingMask = [.width, .height]
                 button.addSubview(pill)
                 pillView = pill
             }
-            pill.frame = button.bounds
+            // Status buttons can remain 22pt high even when the system's
+            // highlighted pills are 24pt. Give our drawing room beyond the
+            // button bounds while keeping its center and native hit target.
+            pill.frame = button.bounds.insetBy(dx: 0, dy: -max(0, (26 - button.bounds.height) / 2))
             pill.symbolImage = image
             pill.fillColor = color
             pill.needsDisplay = true
