@@ -35,3 +35,7 @@ Build from source with Swift 6 on macOS 13 or later:
 ```sh
 swift build -c release
 ```
+
+## Acknowledgements
+
+- The menu bar icon rendering code is adopted from [Vorssaint](https://github.com/vorssaint/vorssaint-utils)
