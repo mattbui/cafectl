@@ -1,6 +1,6 @@
 # cafectl
 
-Small menu bar and command line util for caffinate your Mac.
+A small menu bar and command-line utility to caffeinate your Mac.
 
 - Prevent display, system, or disk sleep independently.
 - Automation for each mode based on power source and battery level.
