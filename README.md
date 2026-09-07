@@ -5,12 +5,25 @@ Small menu bar and command line util for caffinate your Mac.
 - Prevent display, system, or disk sleep independently.
 - Automation for each mode based on power source and battery level.
 
+## Installation
+
+```sh
+brew tap mattbui/formulae
+brew install mattbui/formulae/cafectl
+```
+
 ## Usage
 
 Start the service:
 
 ```sh
 cafectl start
+```
+
+or with Homebrew:
+
+```sh
+brew services start cafectl
 ```
 
 Commands:

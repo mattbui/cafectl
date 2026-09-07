@@ -1,0 +1,179 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing stable tag to release, such as v0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Serialize releases so two runs cannot race while updating the tap.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Validate stable release tag
+        id: tag
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
+            echo "Expected a stable vX.Y.Z tag" >&2
+            exit 1
+          }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    env:
+      TAG: ${{ needs.validate.outputs.tag }}
+      ARCH: ${{ matrix.arch }}
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ needs.validate.outputs.tag }}
+          persist-credentials: false
+      - name: Test and build
+        run: |
+          test "$(uname -m)" = "$ARCH"
+          swift --version
+          swift test
+          swift build --configuration release
+          .build/release/cafectl --help
+      - name: Package binary and notices
+        run: |
+          mkdir -p staging dist
+          cp .build/release/cafectl staging/
+          cp README.md THIRD_PARTY_NOTICES.md staging/
+          cp LICENSES.md staging/
+          # Preserve any project license added after this workflow was introduced.
+          if [[ -f LICENSE ]]; then cp LICENSE staging/; fi
+          codesign --force --sign - staging/cafectl
+          codesign --verify staging/cafectl
+          tar -czf "dist/cafectl-${TAG}-macos-${ARCH}.tar.gz" -C staging .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cafectl-${{ matrix.arch }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    outputs:
+      update_tap: ${{ steps.latest.outputs.update_tap }}
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.validate.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cafectl-*
+          path: dist
+          merge-multiple: true
+      - name: Prepare formula and checksums
+        run: |
+          ruby scripts/update-formula.rb "$TAG" dist Formula/cafectl.rb
+          ruby -c Formula/cafectl.rb
+          cp Formula/cafectl.rb dist/cafectl.rb
+          (cd dist && sha256sum *.tar.gz > SHA256SUMS)
+      - name: Publish release
+        run: |
+          # Reruns finish draft releases or recover a failed tap update.
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --draft --title "$TAG" --generate-notes
+          fi
+          # Published assets are immutable. Never replace an archive behind an existing checksum.
+          if [[ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" == true ]]; then
+            gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --draft=false
+          else
+            mkdir published
+            gh release download "$TAG" --pattern '*.tar.gz' --dir published
+            ruby scripts/update-formula.rb "$TAG" published Formula/cafectl.rb
+          fi
+      - name: Check whether to update the tap
+        id: latest
+        run: |
+          latest=$(gh release view --json tagName --jq .tagName)
+          if [[ "$latest" == "$TAG" ]]; then
+            echo "update_tap=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Skipping tap update because latest release is $latest"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: steps.latest.outputs.update_tap == 'true'
+        with:
+          name: homebrew-formula
+          path: Formula/cafectl.rb
+          if-no-files-found: error
+
+  update-tap:
+    needs: [validate, publish]
+    if: needs.publish.outputs.update_tap == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check tap credentials
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [[ -z "$TAP_TOKEN" ]]; then
+            echo "Set HOMEBREW_TAP_TOKEN with Contents read/write access to mattbui/homebrew-formulae." >&2
+            exit 1
+          fi
+      - name: Check out Homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: mattbui/homebrew-formulae
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+      - uses: actions/download-artifact@v4
+        with:
+          name: homebrew-formula
+          path: formula
+      - name: Update cafectl formula
+        env:
+          TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          cp formula/cafectl.rb tap/cafectl.rb
+          cd tap
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add cafectl.rb
+          if ! git diff --cached --quiet; then
+            git commit -m "Update cafectl to $TAG"
+            git push origin HEAD
+          fi

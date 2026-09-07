@@ -213,7 +213,7 @@ final class StatusPillView: NSView {
 
 // Adapted from vorssaint-utils, StatusItemController.swift at revision f4b1aa6.
 // Copyright (C) 2026 Vorssaint. SPDX-License-Identifier: GPL-3.0-or-later
-// See THIRD_PARTY_NOTICES.md and LICENSES/vorssaint-utils-GPL-3.0.txt.
+// See THIRD_PARTY_NOTICES.md and LICENSES.md.
 @MainActor
 enum MenuBarGlyph {
     static let pointSize = NSSize(width: 26, height: 20)
