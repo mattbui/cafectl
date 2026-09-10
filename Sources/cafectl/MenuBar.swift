@@ -44,15 +44,15 @@ final class MenuBar: NSObject {
         }
         button.attributedTitle = NSAttributedString(string: image == nil ? "cafectl" : "")
         button.imagePosition = image == nil ? .noImage : .imageOnly
-        statusItem.button?.toolTip = active.isEmpty ? "Sleep prevention off" :
-            "Prevent sleep: " + active.map { $0.rawValue.capitalized }.joined(separator: ", ")
+        statusItem.button?.toolTip = active.isEmpty ? "Keep awake off" :
+            "Keep awake: " + active.map { $0.rawValue.capitalized }.joined(separator: ", ")
         commands.removeAll()
         let menu = NSMenu()
         menu.autoenablesItems = false
         for mode in Mode.allCases {
             guard let state = snapshot.modes[mode.rawValue] else { continue }
             let name = mode.rawValue.capitalized
-            let toggle = item("Prevent \(mode.rawValue) sleep", command: .toggle(mode))
+            let toggle = item("Keep \(mode.rawValue) awake", command: .toggle(mode))
             toggle.state = state.active ? .on : .off
             toggle.image = NSImage(systemSymbolName: Self.symbol(mode), accessibilityDescription: name)
             menu.addItem(toggle)
@@ -61,14 +61,14 @@ final class MenuBar: NSObject {
             } else if let reason = state.blockedReason {
                 menu.addItem(label("\(state.automaticStart && !state.active ? "Waiting" : "Blocked"): \(reason)"))
             }
-            let settings = NSMenuItem(title: "\(name) sleep options", action: nil, keyEquivalent: "")
+            let settings = NSMenuItem(title: "Automation options", action: nil, keyEquivalent: "")
             let submenu = NSMenu()
             submenu.autoenablesItems = false
             let automatic = item("Enable automatically", command: .auto(mode, !state.automaticStart))
             automatic.state = state.automaticStart ? .on : .off
             submenu.addItem(automatic)
             submenu.addItem(.separator())
-            let policyHeading = label("Allow sleep prevention")
+            let policyHeading = label("Power options")
             policyHeading.indentationLevel = 0
             submenu.addItem(policyHeading)
             for policy in PowerPolicy.allCases {
